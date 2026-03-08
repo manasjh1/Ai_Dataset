@@ -14,3 +14,6 @@ python-dotenv
 python-multipart
 langchain-text-splitters
 marker-pdf
+numpy<2
+transformers==4.45.2
+pypdf

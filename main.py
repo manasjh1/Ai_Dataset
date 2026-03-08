@@ -19,8 +19,8 @@ app = FastAPI(title="AI Extraction Microservice")
 
 # Initialize Embeddings & Local ChromaDB
 embed_model = HuggingFaceEmbeddings(
-    model_name="intfloat/e5-large-v2",
-    model_kwargs={"trust_remote_code": True, 'device': 'cpu'},
+    model_name="intfloat/multilingual-e5-large",
+    model_kwargs={"trust_remote_code": True, 'device': 'cuda'},
     encode_kwargs={'normalize_embeddings': True}
 )
 app.state.pc_mistral = PC_Mistral(embed_model=embed_model)

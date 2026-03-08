@@ -2,9 +2,23 @@ import asyncio
 import json
 import os
 import torch
+import time
+import logging
+from dotenv import load_dotenv
+
+# Load environment variables for Azure OpenAI keys
+load_dotenv()
+
 from processor_app.pc_db import PC_Mistral
 from langchain_huggingface import HuggingFaceEmbeddings
 from utils.parse_to_mistral import _run_marker_sync
+
+# --- Import the GPT extraction logic ---
+from bidnobid.clause_extraction import process_category, smart_deduplicate_pure_token, CATEGORIES, llm
+
+# Setup basic logging for the script
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # --- 1. Detect the Best Available GPU ---
 def get_device():
@@ -19,7 +33,7 @@ def get_device():
         return "cpu"
 
 async def main():
-    pdf_path = "1707222063_Vol-1 (2)-31-32 copy.pdf"  # Replace with a real PDF in your folder
+    pdf_path = "2024_Irrig_688718_13_SBD.pdf"  # Replace with a real PDF in your folder
     temp_json_path = "temp_doc.json"
     namespace = "test_tender_namespace"
     device = get_device()
@@ -61,11 +75,71 @@ async def main():
         namespace=namespace
     )
     
-    print(f"\n🎉 SUCCESS! {total_chunks} chunks were processed and saved to ChromaDB!")
+    print(f"🎉 SUCCESS! {total_chunks} chunks were processed and saved to ChromaDB!")
 
     # Clean up the temporary JSON file
     if os.path.exists(temp_json_path):
         os.remove(temp_json_path)
+
+    # ==========================================
+    # --- NEW: GPT CLAUSE EXTRACTION STEP ---
+    # ==========================================
+    print(f"\n🔍 Step 5: Initializing Retriever for namespace '{namespace}'...")
+    retriever = db.get_hybrid_retriever(namespace=namespace, k=20)
+
+    print("\n🤖 Step 6: Running GPT-based Clause Extraction (This may take a minute)...")
+    print(f"Categories being processed: {CATEGORIES}")
+    
+    start_time = time.time()
+    
+    # Process all categories concurrently
+    tasks = [process_category(cat, retriever, db, 20) for cat in CATEGORIES]
+    results = await asyncio.gather(*tasks)
+    
+    # Safely flatten the results into a single list (protects against None returns)
+    all_rules = []
+    for sublist in results:
+        if isinstance(sublist, list):
+            all_rules.extend(sublist)
+            
+    print(f"✅ Extracted {len(all_rules)} raw rules across all categories.")
+
+    print("\n🧹 Step 7: Deduplicating and merging extracted rules using LLM...")
+    if all_rules:
+        final_rules = await smart_deduplicate_pure_token(all_rules, llm)
+    else:
+        final_rules = []
+
+    total_time = time.time() - start_time
+    print(f"\n🎉 EXTRACTION COMPLETE! Found {len(final_rules)} unique rules in {total_time:.2f} seconds.")
+
+    # --- 8. Save the final JSON Output (Dataset Format) ---
+    print("\n💾 Step 8: Formatting and saving to dataset structure...")
+    
+    # Map the final rules to ensure they contain all rich dataset features
+    formatted_output = []
+    for rule in final_rules:
+        formatted_output.append({
+            "rule": rule.get("rule", ""),
+            "description": rule.get("description", ""),
+            "reasoning": rule.get("reasoning", ""),
+            # Safely capture category/categories as LLMs sometimes switch singular/plural
+            "categories": rule.get("categories", rule.get("category", [])),
+            "source": rule.get("source", "")
+        })
+
+    # Create the dataset payload
+    dataset_payload = {
+        "instruction": "Analyze the provided tender text and extract structured clause information including rules, description, and category.",
+        "input": markdown_text,  # This is the raw extracted text from Marker
+        "output": formatted_output # This is the LLM result
+    }
+
+    output_file = "dataset_formatted_output.json"
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(dataset_payload, f, ensure_ascii=False, indent=4)
+        
+    print(f"Saved dataset-formatted JSON to '{output_file}'\n")
 
 if __name__ == "__main__":
     asyncio.run(main())
