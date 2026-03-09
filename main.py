@@ -1,10 +1,10 @@
+import logging
+import sys
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_huggingface import HuggingFaceEmbeddings
 from processor_app.pc_db import PC_Mistral
-import os
-import logging
-import sys
 from bidnobid.clause_extraction import router as clauses_router
 
 # Configure Logging
@@ -20,22 +20,22 @@ app = FastAPI(title="AI Extraction Microservice")
 # Initialize Embeddings & Local ChromaDB
 embed_model = HuggingFaceEmbeddings(
     model_name="intfloat/multilingual-e5-large",
-    model_kwargs={"trust_remote_code": True, 'device': 'cuda'},
-    encode_kwargs={'normalize_embeddings': True}
+    model_kwargs={"trust_remote_code": True, "device": "cuda"},
+    encode_kwargs={"normalize_embeddings": True},
 )
 app.state.pc_mistral = PC_Mistral(embed_model=embed_model)
 
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"], 
-    allow_headers=["*"], 
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Include only the AI extraction router
 app.include_router(clauses_router)
+
 
 @app.get("/")
 def read_root():

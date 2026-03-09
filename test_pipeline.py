@@ -33,7 +33,7 @@ def get_device():
         return "cpu"
 
 async def main():
-    pdf_path = "2024_Irrig_688718_13_SBD.pdf"  # Replace with a real PDF in your folder
+    pdf_path = "2024_LSGD_706572_18_NITLIC.pdf"  # Replace with a real PDF in your folder
     temp_json_path = "temp_doc.json"
     namespace = "test_tender_namespace"
     device = get_device()

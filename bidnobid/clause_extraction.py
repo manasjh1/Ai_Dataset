@@ -1,130 +1,104 @@
+
 import os
 import json
 import asyncio
 import logging
-import re
 from typing import List, Dict, Any
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
+from langchain.prompts import PromptTemplate
 from utils.create_llm import create_azure_chat_openai
-from .prompts import PROMPTS_CATEGORIES as PROMPTS
+from .prompts import PROMPTS_CATEGORIES as PROMPTS  
+import re
 from .extract_context import get_pinecone_context
+from fastapi import Request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/bidnobid", tags=["Bid/No-Bid"])
+router = APIRouter(prefix="/bidnobid" , tags=["Bid/No-Bid"])
 
-# Linter Fix: Added ' , "" ' to ensure it always returns a string, not None
 llm = create_azure_chat_openai(
-    azure_deployment=os.environ.get("AZURE_OPENAI_MODEL_TD", ""),
-    api_version=os.environ.get("OPENAI_API_VERSION_TD", ""),
-    api_key=os.environ.get("AZURE_OPENAI_KEY_TD", ""),
+    azure_deployment=os.environ.get("AZURE_OPENAI_MODEL_TD"),
+    api_version=os.environ.get("OPENAI_API_VERSION_TD"),
+    api_key=os.environ.get("AZURE_OPENAI_KEY_TD"),
     temperature=0.1
 )
 
+# pc_mistral = PC_Mistral()
+DENSE_INDEX_NAME = "dense"
+SPARSE_INDEX_NAME = "sparse"
 CATEGORIES = list(PROMPTS.keys())
-MAX_TOKENS = 118000
 
 
 class EligibilityRequest(BaseModel):
     chat_id: str
-    # No user_id — auth removed
 
 
-# =========================================================================
-# HELPERS
-# =========================================================================
-
-# Linter Fix: Added 'text: Any' to accept both strings and Langchain message lists
-def clean_json_response(text: Any) -> str:
-    """Handle str | list[str | dict] returned by resp.content."""
-    if isinstance(text, list):
-        # Extract text blocks from content list (AIMessage content format)
-        text = "".join(
-            block.get("text", "") if isinstance(block, dict) else str(block)
-            for block in text
-        )
-    text = str(text).strip()
+def clean_json_response(text: str) -> str:
+    text = text.strip()
     if text.startswith("```json"):
         text = text[7:]
     if text.endswith("```"):
         text = text[:-3]
     return text.strip()
 
-
-def _sanitize_collection_name(name: str) -> str:
-    name = re.sub(r'[^a-zA-Z0-9._-]', '', name)
-    name = re.sub(r'^[^a-zA-Z0-9]+', '', name)
-    name = re.sub(r'[^a-zA-Z0-9]+$', '', name)
-    if len(name) < 3:
-        name = f"col_{name}"
-    return name
-
-
-def estimate_tokens(clauses: List[Dict]) -> int:
-    text = json.dumps(clauses, ensure_ascii=False)
-    words = len(text.split())
-    chars = len(text)
-    return int(words * 4.0 + chars / 3.8 + 200)
-
-
-# =========================================================================
-# CATEGORY EXTRACTION
-# =========================================================================
-
-async def extract_for_category_fast(
-    category: str, context_chunks: str, question: str
-) -> List[Dict]:
+# =============================================================================
+# FAST CATEGORY EXTRACTION (SHARED CONTEXT)
+# =============================================================================
+async def extract_for_category_fast(category: str, context_chunks: str, question: str) -> List[Dict]:
     try:
         print(f"Extracting for category: {category}")
-
+        # print(f"{context_chunks}")
+        # formatted_ctx = "\n\n".join([
+        #     f"{c['page_content']}\n<<<Source: Page {c['page']}, File: {c['file']}>>>"
+        #     for c in context_chunks
+        # ])
+        print(f"Formatted context length for category {category}: {len(context_chunks)} characters")
         if not context_chunks:
-            logger.warning(f"No context for '{category}', skipping.")
+            logger.warning(f"No context available for category {category}, skipping extraction.")
             return []
-
-        print(f"Context length for '{category}': {len(context_chunks)} characters")
-
+        # print(f"Formatted context length for category {category}: {len(context_chunks)} :{context_chunks[:500]} characters")
+        print(f"for category {category}:Formatted context length: {len(context_chunks)} characters")
         messages = [
             ("system", PROMPTS[category]),
             ("human", f"Context:\n{context_chunks}\n\nQuestion: {question}")
         ]
         resp = await llm.ainvoke(messages)
-        
-        # Linter error resolved: clean_json_response now accepts Any type
         json_str = clean_json_response(resp.content)
-        
+
         data = json.loads(json_str)
         rules = data if isinstance(data, list) else [data]
-        logger.info(f"'{category}': {len(rules)} rules extracted")
+        logger.info(f"{category}: → {len(rules)} rules")
         return rules
-
     except Exception as e:
-        logger.warning(f"Extraction failed for '{category}': {e}")
+        logger.warning(f"Extract failed for {category}: {e}")
         return []
 
 
-# =========================================================================
-# DEDUPLICATION
-# =========================================================================
+MAX_TOKENS = 118000  # Safe for GPT-4o (real limit ~128k)
+
+def estimate_tokens(clauses: List[Dict]) -> int:
+    text = json.dumps(clauses, ensure_ascii=False)
+    words = len(text.split())
+    chars = len(text)
+    return int(words * 4.0 + chars / 3.8 + 200)  # Ultra-accurate
 
 async def smart_deduplicate_pure_token(
-    rules: List[Dict], llm_instance
+    rules: List[Dict],
+    llm_instance
 ) -> List[Dict]:
     """
-    Token-budget deduplication:
-    - Fits in MAX_TOKENS → single perfect LLM call
-    - Too large → split into halves recursively → final merge
+    TRUE token-only deduplication:
+    - If total < 118k tokens → single perfect call
+    - If > 118k → split into TWO HALVES → recurse → final merge
+    NO fixed batch size. Ever.
     """
-    
-    # BASE CASE: Prevents infinite loop
-    if len(rules) <= 1:
-        return rules
 
     total_tokens = estimate_tokens(rules)
     logger.info(f"Deduplication: {len(rules)} rules → ~{total_tokens:,} tokens")
 
+    # SINGLE CALL — BEST QUALITY
     if total_tokens <= MAX_TOKENS:
         logger.info("Single-call deduplication (perfect quality)")
         prompt = f"""
@@ -142,67 +116,85 @@ Each clause must contain:
 - "description": Explanation or supporting details
 - "reasoning": The logic or purpose behind the clause
 - "categories": List of related categories
-- "source": Original source references (if multiple, combine them)
+- "source": Original source references(if there are multiple, combine them)
 
 INPUT ({len(rules)} rules):
 {json.dumps(rules, indent=2, ensure_ascii=False)}
 
 OUTPUT: Clean JSON array only. Same format.
 """
+
         try:
             resp = await llm_instance.ainvoke([
-                ("system", "You are a Tender analysis expert. Merge only true duplicates. Never remove unique rules. STRICTLY use double quotes for JSON properties and escape internal quotes."),
+                ("system", "You are Tender analysis expert.Your task is to merge only true duplicates. Never remove unique rules."),
                 ("human", prompt)
             ])
             cleaned = clean_json_response(resp.content)
             result = json.loads(cleaned)
             final = result if isinstance(result, list) else rules
-            logger.info(f"Single-call dedupe: {len(rules)} → {len(final)} rules")
+            logger.info(f"Single-call: {len(rules)} → {len(final)} rules")
             return final
         except Exception as e:
-            logger.warning(f"Single-call dedupe failed ({e}) → splitting")
+            logger.warning(f"Single call failed ({e}) → falling back to split")
 
-    # Token-based recursive split
-    logger.info("Token budget exceeded or parsing failed → splitting into halves")
+    # PURE TOKEN-BASED SPLIT (no fixed size)
+    logger.info("Too many tokens → splitting by half for processing")
     mid = len(rules) // 2
-    left, right = rules[:mid], rules[mid:]
-    logger.info(f"Split: {len(left)} + {len(right)} rules")
+    left = rules[:mid]
+    right = rules[mid:]
 
+    logger.info(f"Splitting into {len(left)} + {len(right)} rules")
+
+    # Recursively deduplicate each half
     left_clean = await smart_deduplicate_pure_token(left, llm_instance)
     right_clean = await smart_deduplicate_pure_token(right, llm_instance)
 
     combined = left_clean + right_clean
-    logger.info(f"After half-dedupe: {len(combined)} rules → final merge")
+    logger.info(f"After split+dedupe: {len(combined)} rules → doing final merge")
 
+    # Final global merge (now fits in one call)
     return await smart_deduplicate_pure_token(combined, llm_instance)
 
-
-# =========================================================================
-# PER-CATEGORY PIPELINE
-# =========================================================================
-
-# Linter Fix: Added '-> List[Dict]' return type so the linter knows it is iterable
-async def process_category(cat: str, retriever, pc_mistral, top_n: int) -> List[Dict]:
-    formatted_ctx = await get_pinecone_context(cat, retriever, pc_mistral, top_n=top_n)
-
+async def process_category(cat,retriever, pc_mistral, top_n):
+    # Step 1: Get category-specific context
+    formatted_ctx = await get_pinecone_context(
+        cat,  
+        retriever,
+        pc_mistral,
+        top_n=top_n
+    )
+    
     print(f"{cat} context length: {len(formatted_ctx)} characters")
     print(f"{cat} context sample: {formatted_ctx[:500]}")
-
+    # Step 2: Extract rules for this category
     question = f"Extract all eligibility criteria relevant to {cat} from the context."
+    
+    return await extract_for_category_fast(
+        cat,
+        formatted_ctx,
+        question
+    )
 
-    return await extract_for_category_fast(cat, formatted_ctx, question)
+def _sanitize_collection_name(name: str) -> str:
+    # Keep only allowed characters
+    name = re.sub(r'[^a-zA-Z0-9._-]', '', name)
 
+    # Remove leading non-alphanumeric
+    name = re.sub(r'^[^a-zA-Z0-9]+', '', name)
 
-# =========================================================================
-# ENDPOINT
-# =========================================================================
+    # Remove trailing non-alphanumeric
+    name = re.sub(r'[^a-zA-Z0-9]+$', '', name)
+
+    # Ensure minimum length
+    if len(name) < 3:
+        name = f"col_{name}"
+
+    return name
+
 
 @router.post("/extract-clauses")
-async def extract_clauses(request: EligibilityRequest, req: Request):
-    """
-    Extract and deduplicate eligibility clauses from tender documents.
-    No DB, no auth — pass chat_id only.
-    """
+async def extract_clauses(request: EligibilityRequest,
+                          req: Request):
     try:
         namespace = f"{request.chat_id}_test"
         pc_mistral = req.app.state.pc_mistral
@@ -213,23 +205,19 @@ async def extract_clauses(request: EligibilityRequest, req: Request):
         )
 
         start = asyncio.get_event_loop().time()
-
-        # Parallel extraction across all categories
+        
         tasks = [process_category(cat, retriever, pc_mistral, 20) for cat in CATEGORIES]
         results = await asyncio.gather(*tasks)
-        
-        # Because we added -> List[Dict] to process_category, this will no longer throw an iter error
         all_rules = [r for sublist in results for r in sublist]
-
-        print(f"Extraction done in {asyncio.get_event_loop().time() - start:.2f}s | {len(all_rules)} raw rules")
-
-        final_rules = await smart_deduplicate_pure_token(all_rules, llm)
+        print(f"Total time for extraction before deduplication: {asyncio.get_event_loop().time() - start:.2f}s")
+        # HYBRID DEDUPLICATION
+        final_rules = await smart_deduplicate_pure_token(all_rules,llm)
 
         total_time = asyncio.get_event_loop().time() - start
-        logger.info(f"TOTAL: {total_time:.2f}s | {len(all_rules)} → {len(final_rules)} rules")
-        print(f"TOTAL: {total_time:.2f}s | {len(all_rules)} → {len(final_rules)} rules")
+        logger.info(f"TOTAL TIME: {total_time:.2f}s | Rules: {len(all_rules)} → {len(final_rules)}")
+        print(f"TOTAL TIME: {total_time:.2f}s | Rules: {len(all_rules)} → {len(final_rules)}")
 
-        return {
+        return {   
             "namespace": namespace,
             "processing_time_seconds": round(total_time, 2),
             "raw_rules_count": len(all_rules),

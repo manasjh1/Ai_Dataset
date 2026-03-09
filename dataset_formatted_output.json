@@ -1,0 +1,204 @@
+{
+    "instruction": "Analyze the provided tender text and extract structured clause information including rules, description, and category.",
+    "output": [
+        {
+            "rule": "Bidder must be a registered contractor with Kerala Public Works Department or equivalent State/Central Government Engineering Departments.",
+            "description": "Bidders are required to have a valid registration with the Kerala PWD or similar government engineering departments to be eligible to submit a bid.",
+            "reasoning": "This ensures that only contractors with recognized credentials and experience in government projects are considered.",
+            "categories": [
+                "Technical Eligibility Evaluation"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Bidders must have a valid and active registration on the date of bid submission.",
+            "description": "Only those bidders whose registration is active and valid at the time of submitting their bid are eligible to participate.",
+            "reasoning": "This criterion ensures that bidders are currently recognized and authorized to undertake government projects.",
+            "categories": [
+                "Technical Eligibility Evaluation"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Ineligible bidders or those without valid registration are advised not to participate.",
+            "description": "Bidders who do not meet the registration requirements are explicitly advised against submitting a bid.",
+            "reasoning": "This serves as a pre-qualification filter to prevent unqualified bidders from participating.",
+            "categories": [
+                "Technical Eligibility Evaluation"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Contractor must own/hire/deploy required tools and plants as specified in the Contract data.",
+            "description": "Bidders must demonstrate the capability to provide necessary equipment for the execution of the work.",
+            "reasoning": "Ensures that the contractor has the necessary resources to complete the project satisfactorily.",
+            "categories": [
+                "Technical Eligibility Evaluation"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Bid Security payment details must be included in the bid submission.",
+            "description": "The bidder is required to provide details of the Bid Security payment as part of the bid submission process.",
+            "reasoning": "Bid Security is a financial guarantee that ensures the bidder's commitment to the tender process and is a standard financial requirement in tender submissions.",
+            "categories": [
+                "Financial Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Copy of remittance towards bid submission fee and Bid Security must be provided.",
+            "description": "The bidder must submit proof of payment for the bid submission fee and Bid Security, which are financial prerequisites for participating in the tender.",
+            "reasoning": "These payments are essential financial commitments that demonstrate the bidder's seriousness and capability to engage in the tender process.",
+            "categories": [
+                "Financial Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Performance Guarantee must be furnished within 14 days of the Letter of Acceptance.",
+            "description": "The successful bidder is required to provide a Performance Guarantee as a financial assurance for the execution and completion of the contract.",
+            "reasoning": "A Performance Guarantee is a financial instrument that ensures the bidder will fulfill the contract obligations, protecting the employer from potential defaults.",
+            "categories": [
+                "Financial Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Fine for late furnishing of Performance Guarantee is equal to 1% of the Contract Price, subject to a minimum of Rs.1000 and maximum of Rs.25,000.",
+            "description": "If the successful bidder fails to provide the Performance Guarantee within the stipulated time, a financial penalty is imposed, which must be paid to the State Treasury.",
+            "reasoning": "This clause imposes a financial penalty to ensure timely compliance with the Performance Guarantee requirement, emphasizing fiscal discipline.",
+            "categories": [
+                "Financial Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Contractor must ensure all financial documents submitted are true, correct, complete, and accurate.",
+            "description": "The contractor is obligated to provide accurate financial documentation, including invoices and vouchers, which may be subject to audit.",
+            "reasoning": "Accurate financial documentation is crucial for transparency and accountability in the tender process, ensuring the contractor's financial integrity.",
+            "categories": [
+                "Financial Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "The bidder must indemnify the Employer against all liability for death, personal injury, property damage, and other losses during site visits.",
+            "description": "Bidders must release and indemnify the Employer from liability related to site visits, ensuring they are responsible for any incidents or damages.",
+            "reasoning": "This requirement implies risk management and safety responsibility during site visits, highlighting the need for bidders to have policies to manage and mitigate such risks.",
+            "categories": [
+                "Risk Assessment Policies"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "The Employer must provide safety measures and welfare facilities at construction sites as per the Building and Other Construction Workers Act 1996.",
+            "description": "Employers are required to implement safety measures and welfare facilities like canteens, first-aid, and housing accommodations for workers.",
+            "reasoning": "This requirement mandates compliance with safety and welfare standards, indicating the need for bidders to have robust safety and operational control policies.",
+            "categories": [
+                "Risk Assessment Policies"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Compliance with health and safety provisions as per the Factories Act 1948.",
+            "description": "Bidders must adhere to health and safety provisions, welfare provisions, and accident reporting as per the Factories Act.",
+            "reasoning": "This requirement implies the need for bidders to have health and safety policies and procedures in place to comply with legal standards.",
+            "categories": [
+                "Risk Assessment Policies"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "The Contractor must appoint a qualified safety officer to ensure site safety and compliance with safety standards.",
+            "description": "Contractors are required to appoint a full-time safety officer responsible for implementing and enforcing safety measures on-site.",
+            "reasoning": "This requirement explicitly demands a dedicated role for safety management, indicating the importance of having structured safety policies and personnel.",
+            "categories": [
+                "Risk Assessment Policies",
+                "keyexperts and technical staff"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Contractors must ensure the adequacy, stability, and safety of all site operations.",
+            "description": "Contractors are responsible for the safety and security of site operations, including methods of work and safety of manpower and equipment.",
+            "reasoning": "This requirement emphasizes the need for comprehensive safety and operational control policies to manage site operations safely.",
+            "categories": [
+                "Risk Assessment Policies"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "A Bidder shall be a registered contractor in Kerala Public Works Department or from any State or Central Government Engineering Departments with similar functionalities.",
+            "description": "The bidder must be registered with the Kerala PWD or equivalent State or Central Government Engineering Departments, ensuring they have the necessary legal status and recognition to participate in the tender.",
+            "reasoning": "This condition ensures that only legally recognized and registered entities with relevant experience and capabilities are eligible to bid.",
+            "categories": [
+                "Company Registration Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Only bidders with a valid and active registration on the date of bid submission shall submit bids online.",
+            "description": "Bidders must ensure their registration is current and active at the time of bid submission to be eligible to participate.",
+            "reasoning": "This requirement ensures that the bidder's legal status and eligibility are up-to-date, preventing expired or inactive entities from participating.",
+            "categories": [
+                "Company Registration Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "In the event of the tender being submitted by a partnership firm, it must be signed by the lead partner holding a valid power-of-attorney and disclose registration under the Indian Partnership Act, 1952.",
+            "description": "Partnership firms must provide proof of registration under the Indian Partnership Act and authorize a lead partner to act on behalf of the firm.",
+            "reasoning": "This ensures that the partnership is legally recognized and that the person signing the tender has the authority to do so.",
+            "categories": [
+                "Company Registration Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Self-attested copy of the bidder's valid registration certificate in Kerala PWD, CPWD, or other approved agencies must be submitted.",
+            "description": "Bidders are required to provide a self-attested copy of their registration certificate to prove their eligibility and legal status.",
+            "reasoning": "This document serves as proof of the bidder's legal registration and eligibility to participate in the tender.",
+            "categories": [
+                "Company Registration Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "All bidders are required to register in the e-procurement portal and attach a valid Digital Signature Certificate (DSC).",
+            "description": "Bidders must register on the e-procurement portal and use a DSC to ensure secure and verified submission of their bids.",
+            "reasoning": "This requirement ensures that the bidding process is secure and that the bidder's identity is verified through the DSC.",
+            "categories": [
+                "Company Registration Documents"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "All key staff employed at the Site by the Contractor shall be considered essential to the performance of the Work and the Work Co-ordination Services, and all key staff shall be subject to the approval of the Engineer-in-Charge.",
+            "description": "Key staff must be approved by the Engineer-in-Charge, indicating their essential role in the project and ensuring their qualifications meet project standards.",
+            "reasoning": "This is an eligibility condition as it requires key staff to be vetted and approved, ensuring they are qualified and suitable for the project.",
+            "categories": [
+                "keyexperts and technical staff"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "No staff including the resident engineer and other technical supervisory staff shall be removed or transferred from the Work without the prior written permission of the Engineer-in-Charge.",
+            "description": "The contractor must maintain the continuity of key staff, including the resident engineer and technical supervisory staff, unless approved by the Engineer-in-Charge.",
+            "reasoning": "This condition ensures stability and consistency in project management and execution, which is crucial for maintaining project standards.",
+            "categories": [
+                "keyexperts and technical staff"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        },
+        {
+            "rule": "Prior to substitution or addition of any key staff, the Contractor shall obtain the Engineer-in-Charge's written consent as to the acceptability of replacements or additions to such personnel.",
+            "description": "Any changes to key staff require prior approval, ensuring that replacements are equally qualified and suitable for the project.",
+            "reasoning": "This condition is critical for maintaining the quality and continuity of project execution, as it ensures that any new personnel meet the required standards.",
+            "categories": [
+                "keyexperts and technical staff"
+            ],
+            "source": "<<<Source: File temp_doc.json, Page 1>>>"
+        }
+    ]
+}

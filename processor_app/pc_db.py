@@ -10,6 +10,7 @@ import logging
 from rank_bm25 import BM25Okapi
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 class PC_Mistral:
     def __init__(self, embed_model):
         self.embedder = embed_model
@@ -121,9 +122,16 @@ class PC_Mistral:
                 return []
 
             collection = self._get_collection(namespace)
-            q_emb = self.embedder.embed_documents([f"query: {query}"])[0]
+            
+            # 1. Fetch a larger pool of documents (5x) so BM25 has enough to work with
+            fetch_pool = top_n * 5
+            
+            # 2. Slice the query for the Dense model so the embedding model 
+            # doesn't choke on the giant 150-word keyword lists.
+            dense_query = f"query: {query[:200]}"
+            q_emb = self.embedder.embed_documents([dense_query])[0]
 
-            results = collection.query(query_embeddings=[q_emb], n_results=top_n * 2)
+            results = collection.query(query_embeddings=[q_emb], n_results=fetch_pool)
 
             if not results or not results.get("documents") or len(results["documents"][0]) == 0:
                 return []
@@ -132,13 +140,37 @@ class PC_Mistral:
             metas = results["metadatas"][0]
             distances = results["distances"][0]
 
+            # 3. Score Normalization and BM25 Weighting
             try:
-                dense_scores = 1 - np.array(distances)
-                bm25 = BM25Okapi([d.split() for d in docs])
-                sparse_scores = bm25.get_scores(query.split())
-                scores = 0.8 * dense_scores + 0.2 * sparse_scores
-                ranked = sorted(zip(docs, metas, scores), key=lambda x: x[2], reverse=True)[:top_n]
-            except Exception:
+                # Convert cosine distance to 0-1 range
+                raw_dense_scores = 1 - np.array(distances)
+                if np.max(raw_dense_scores) > np.min(raw_dense_scores):
+                    dense_scores = (raw_dense_scores - np.min(raw_dense_scores)) / (np.max(raw_dense_scores) - np.min(raw_dense_scores))
+                else:
+                    dense_scores = np.ones_like(raw_dense_scores)
+
+                # Initialize BM25 on retrieved documents
+                tokenized_docs = [d.lower().split() for d in docs]
+                bm25 = BM25Okapi(tokenized_docs)
+                
+                # Use the FULL query (including keywords) for the BM25 search
+                tokenized_query = query.lower().split()
+                raw_sparse_scores = bm25.get_scores(tokenized_query)
+                
+                # Min-Max Normalize the BM25 scores to a 0-1 range so they don't break the math
+                if np.max(raw_sparse_scores) > np.min(raw_sparse_scores):
+                    sparse_scores = (raw_sparse_scores - np.min(raw_sparse_scores)) / (np.max(raw_sparse_scores) - np.min(raw_sparse_scores))
+                else:
+                    sparse_scores = np.zeros_like(raw_sparse_scores)
+
+                # Combine with weights (70% semantic meaning, 30% exact keyword match)
+                final_scores = (0.7 * dense_scores) + (0.3 * sparse_scores)
+                
+                # Zip and sort by the final hybrid score, then cut down to top_n
+                ranked = sorted(zip(docs, metas, final_scores), key=lambda x: x[2], reverse=True)[:top_n]
+            except Exception as e:
+                logging.error(f"Error in hybrid reranking: {str(e)}")
+                # Fallback if BM25 fails
                 ranked = list(zip(docs, metas, [1.0]*len(docs)))[:top_n]
 
             return [
@@ -165,6 +197,11 @@ class PC_Mistral:
                 self.pc = pc
                 self.namespace = namespace
                 self.k = k
+                
+                # THESE DUMMY ATTRIBUTES FIX YOUR extract_context.py BUG
+                # They spoof Pinecone's structure so your second retrieval pass executes
+                self.dense_index = True
+                self.sparse_index = True
 
             def invoke(self, query, n=None):
                 res = self.pc.hybrid_search(
