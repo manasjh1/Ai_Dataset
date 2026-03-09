@@ -43,9 +43,7 @@ def clean_json_response(text: str) -> str:
         text = text[:-3]
     return text.strip()
 
-# =============================================================================
-# FAST CATEGORY EXTRACTION (SHARED CONTEXT)
-# =============================================================================
+
 async def extract_for_category_fast(category: str, context_chunks: str, question: str) -> List[Dict]:
     try:
         print(f"Extracting for category: {category}")

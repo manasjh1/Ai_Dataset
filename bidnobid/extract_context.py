@@ -40,9 +40,6 @@ async def get_pinecone_context(question: str, retriever, pc, top_n=13):
         )
         context_texts = []
 
-    # --------------------------------------------------
-    # Format context safely
-    # --------------------------------------------------
     formatted_context = "\n\n".join(
         f"{chunk['page_content']}\n<<<Source: File {chunk['file']}, Page {chunk['page']}>>>"
         for chunk in context_texts

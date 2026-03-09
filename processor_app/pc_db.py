@@ -205,8 +205,7 @@ class PC_Mistral:
                 self.namespace = namespace
                 self.k = k
                 
-                # THESE DUMMY ATTRIBUTES FIX YOUR extract_context.py BUG
-                # They spoof Pinecone's structure so your second retrieval pass executes
+                
                 self.dense_index = True
                 self.sparse_index = True
 

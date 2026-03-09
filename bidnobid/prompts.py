@@ -1,5 +1,3 @@
-# processor_app/prompts.py
-
 PROMPTS = {
     "Experience Certificates & Project Information": """
 You are an expert bidder and procurement consultant with deep knowledge of tendering processes...
