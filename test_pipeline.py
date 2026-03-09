@@ -23,42 +23,41 @@ logger = logging.getLogger(__name__)
 # --- 1. Detect the Best Available GPU ---
 def get_device():
     if torch.cuda.is_available():
-        print("🚀 GPU Detected: Using NVIDIA CUDA")
+        print("GPU Detected: Using NVIDIA CUDA")
         return "cuda"
     elif torch.backends.mps.is_available():
-        print("🍏 Apple Silicon Detected: Using Metal Performance Shaders (MPS)")
+        print("Apple Silicon Detected: Using Metal Performance Shaders (MPS)")
         return "mps"
     else:
-        print("⚠️ No GPU Detected: Falling back to CPU")
+        print("No GPU Detected: Falling back to CPU")
         return "cpu"
 
 async def main():
-    pdf_path = "2024_LSGD_706572_18_NITLIC.pdf"  # Replace with a real PDF in your folder
+    pdf_path = "2024_LSGD_706572_18_NITLIC.pdf"  
     temp_json_path = "temp_doc.json"
     namespace = "test_tender_namespace"
     device = get_device()
 
     if not os.path.exists(pdf_path):
-        print(f"❌ Error: Please put a file named '{pdf_path}' in this folder.")
+        print(f"Error: Please put a file named '{pdf_path}' in this folder.")
         return
 
-    # --- 2. Extract Text using Marker (GPU) ---
-    print(f"\n📄 Step 1: Extracting text from {pdf_path} using Marker...")
+    print(f"\nStep 1: Extracting text from {pdf_path} using Marker...")
     markdown_text = _run_marker_sync(pdf_path)
     
     if not markdown_text:
-        print("❌ Error: Failed to extract text from PDF.")
+        print("Error: Failed to extract text from PDF.")
         return
         
-    print(f"✅ Extracted {len(markdown_text)} characters of text!")
+    print(f"Extracted {len(markdown_text)} characters of text!")
 
     # --- 3. Save to JSON format ---
-    print("\n💾 Step 2: Saving text to temporary JSON format...")
+    print("\nStep 2: Saving text to temporary JSON format...")
     with open(temp_json_path, "w", encoding="utf-8") as f:
         json.dump({"text": markdown_text}, f, ensure_ascii=False, indent=2)
 
     # --- 4. Initialize Database & Embeddings (GPU) ---
-    print("\n🧠 Step 3: Initializing HuggingFace Embeddings and ChromaDB...")
+    print("\nStep 3: Initializing HuggingFace Embeddings and ChromaDB...")
     embed_model = HuggingFaceEmbeddings(
         model_name="intfloat/e5-large-v2", 
         model_kwargs={'device': device, 'trust_remote_code': True},
@@ -67,7 +66,7 @@ async def main():
     db = PC_Mistral(embed_model=embed_model)
 
     # --- 5. Upload to ChromaDB ---
-    print(f"\n⬆️ Step 4: Uploading and chunking into ChromaDB (Namespace: {namespace})...")
+    print(f"\nStep 4: Uploading and chunking into ChromaDB (Namespace: {namespace})...")
     total_chunks = await db.chunk_upload_hybrid(
         filenames=[temp_json_path], 
         dense_index=None, 
@@ -75,19 +74,17 @@ async def main():
         namespace=namespace
     )
     
-    print(f"🎉 SUCCESS! {total_chunks} chunks were processed and saved to ChromaDB!")
+    print(f"SUCCESS! {total_chunks} chunks were processed and saved to ChromaDB!")
 
     # Clean up the temporary JSON file
     if os.path.exists(temp_json_path):
         os.remove(temp_json_path)
 
-    # ==========================================
-    # --- NEW: GPT CLAUSE EXTRACTION STEP ---
-    # ==========================================
-    print(f"\n🔍 Step 5: Initializing Retriever for namespace '{namespace}'...")
+    
+    print(f"\nStep 5: Initializing Retriever for namespace '{namespace}'...")
     retriever = db.get_hybrid_retriever(namespace=namespace, k=20)
 
-    print("\n🤖 Step 6: Running GPT-based Clause Extraction (This may take a minute)...")
+    print("\nStep 6: Running GPT-based Clause Extraction (This may take a minute)...")
     print(f"Categories being processed: {CATEGORIES}")
     
     start_time = time.time()
@@ -102,19 +99,19 @@ async def main():
         if isinstance(sublist, list):
             all_rules.extend(sublist)
             
-    print(f"✅ Extracted {len(all_rules)} raw rules across all categories.")
+    print(f"Extracted {len(all_rules)} raw rules across all categories.")
 
-    print("\n🧹 Step 7: Deduplicating and merging extracted rules using LLM...")
+    print("\nStep 7: Deduplicating and merging extracted rules using LLM...")
     if all_rules:
         final_rules = await smart_deduplicate_pure_token(all_rules, llm)
     else:
         final_rules = []
 
     total_time = time.time() - start_time
-    print(f"\n🎉 EXTRACTION COMPLETE! Found {len(final_rules)} unique rules in {total_time:.2f} seconds.")
+    print(f"\nEXTRACTION COMPLETE! Found {len(final_rules)} unique rules in {total_time:.2f} seconds.")
 
     # --- 8. Save the final JSON Output (Dataset Format) ---
-    print("\n💾 Step 8: Formatting and saving to dataset structure...")
+    print("\nStep 8: Formatting and saving to dataset structure...")
     
     # Map the final rules to ensure they contain all rich dataset features
     formatted_output = []
