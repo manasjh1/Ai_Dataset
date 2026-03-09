@@ -55,13 +55,16 @@ class PC_Mistral:
         collection = self._get_collection(namespace)
         docs = [b["chunk_text"] for b in batch]
         ids = [b["_id"] for b in batch]
-        metas = [{k: v for k, v in b.items() if k not in ["_id", "chunk_text"]} for b in batch]
+        metas = [
+            {k: str(v) for k, v in b.items() if k not in ["_id", "chunk_text"]}
+            for b in batch
+        ]
         
         embeddings = await asyncio.to_thread(
             self.embedder.embed_documents, [f"passage: {d}" for d in docs]
         )
         
-        collection.add(documents=docs, embeddings=embeddings, metadatas=metas, ids=ids)
+        collection.add(documents=docs, embeddings=embeddings, metadatas=metas, ids=ids)  # type: ignore[arg-type]
         return len(batch)
 
     async def chunk_upload_hybrid(self, filenames, dense_index, sparse_index, namespace):
@@ -133,12 +136,16 @@ class PC_Mistral:
 
             results = collection.query(query_embeddings=[q_emb], n_results=fetch_pool)
 
-            if not results or not results.get("documents") or len(results["documents"][0]) == 0:
+            result_docs = results.get("documents")
+            result_metas = results.get("metadatas")
+            result_distances = results.get("distances")
+
+            if not result_docs or not result_metas or not result_distances or len(result_docs[0]) == 0:
                 return []
 
-            docs = results["documents"][0]
-            metas = results["metadatas"][0]
-            distances = results["distances"][0]
+            docs = result_docs[0]
+            metas = result_metas[0]
+            distances = result_distances[0]
 
             # 3. Score Normalization and BM25 Weighting
             try:

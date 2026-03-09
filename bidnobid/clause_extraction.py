@@ -6,7 +6,7 @@ import logging
 from typing import List, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from langchain.prompts import PromptTemplate
+
 from utils.create_llm import create_azure_chat_openai
 from .prompts import PROMPTS_CATEGORIES as PROMPTS  
 import re
@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/bidnobid" , tags=["Bid/No-Bid"])
 
 llm = create_azure_chat_openai(
-    azure_deployment=os.environ.get("AZURE_OPENAI_MODEL_TD"),
-    api_version=os.environ.get("OPENAI_API_VERSION_TD"),
-    api_key=os.environ.get("AZURE_OPENAI_KEY_TD"),
+    azure_deployment=os.environ.get("AZURE_OPENAI_MODEL_TD", ""),
+    api_version=os.environ.get("OPENAI_API_VERSION_TD", ""),
+    api_key=os.environ.get("AZURE_OPENAI_KEY_TD", ""),
     temperature=0.1
 )
 
@@ -49,23 +49,17 @@ def clean_json_response(text: str) -> str:
 async def extract_for_category_fast(category: str, context_chunks: str, question: str) -> List[Dict]:
     try:
         print(f"Extracting for category: {category}")
-        # print(f"{context_chunks}")
-        # formatted_ctx = "\n\n".join([
-        #     f"{c['page_content']}\n<<<Source: Page {c['page']}, File: {c['file']}>>>"
-        #     for c in context_chunks
-        # ])
         print(f"Formatted context length for category {category}: {len(context_chunks)} characters")
         if not context_chunks:
             logger.warning(f"No context available for category {category}, skipping extraction.")
             return []
-        # print(f"Formatted context length for category {category}: {len(context_chunks)} :{context_chunks[:500]} characters")
         print(f"for category {category}:Formatted context length: {len(context_chunks)} characters")
         messages = [
             ("system", PROMPTS[category]),
             ("human", f"Context:\n{context_chunks}\n\nQuestion: {question}")
         ]
         resp = await llm.ainvoke(messages)
-        json_str = clean_json_response(resp.content)
+        json_str = clean_json_response(str(resp.content))
 
         data = json.loads(json_str)
         rules = data if isinstance(data, list) else [data]
@@ -129,7 +123,7 @@ OUTPUT: Clean JSON array only. Same format.
                 ("system", "You are Tender analysis expert.Your task is to merge only true duplicates. Never remove unique rules."),
                 ("human", prompt)
             ])
-            cleaned = clean_json_response(resp.content)
+            cleaned = clean_json_response(str(resp.content))
             result = json.loads(cleaned)
             final = result if isinstance(result, list) else rules
             logger.info(f"Single-call: {len(rules)} → {len(final)} rules")

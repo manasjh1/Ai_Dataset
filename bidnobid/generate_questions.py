@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 llm1 = create_azure_chat_openai(
-        azure_deployment=os.environ.get("AZURE_OPENAI_MODEL_TD"),
-        api_version=os.environ.get("OPENAI_API_VERSION_TD"),
-        api_key=os.environ.get("AZURE_OPENAI_KEY_TD"),
+        azure_deployment=os.environ.get("AZURE_OPENAI_MODEL_TD", ""),
+        api_version=os.environ.get("OPENAI_API_VERSION_TD", ""),
+        api_key=os.environ.get("AZURE_OPENAI_KEY_TD", ""),
     )
 
 async def generate_follow_up_questions(question, context):
@@ -31,7 +31,7 @@ Follow these guidelines:
 - send it as a list of 5 questions without any additional text or formatting.
 """
     user_prompt = f"""Original Question: {question}"""
-    questions_str = llm1.invoke([("system", str(system_prompt)), ("human", str(question))]).content
+    questions_str = str(llm1.invoke([("system", str(system_prompt)), ("human", str(question))]).content)
     print(f"Generated follow-up questions string: {questions_str}")
     return [q.strip() for q in questions_str.split("\n") if q.strip()]
 

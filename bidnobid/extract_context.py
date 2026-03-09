@@ -1,4 +1,3 @@
-from langchain.prompts import PromptTemplate
 from .prompts import RETRIEVAL_QUERIES
 import logging
 from .generate_questions import generate_follow_up_questions, dedup_contexts
