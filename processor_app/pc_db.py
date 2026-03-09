@@ -126,12 +126,14 @@ class PC_Mistral:
 
             collection = self._get_collection(namespace)
             
-            # 1. Fetch a larger pool of documents (5x) so BM25 has enough to work with
-            fetch_pool = top_n * 5
+            # 1. Fetch a larger pool of documents (10x instead of 5x) so BM25 has enough to work with
+            fetch_pool = top_n * 10
             
-            # 2. Slice the query for the Dense model so the embedding model 
-            # doesn't choke on the giant 150-word keyword lists.
-            dense_query = f"query: {query[:200]}"
+            # 2. Slice the query safely by words (approx 80 words) to prevent dense embedding errors
+            # This ensures we don't slice words in half like [:200] character slicing did
+            query_words = query.split()
+            dense_query = "query: " + " ".join(query_words[:80])
+            
             q_emb = self.embedder.embed_documents([dense_query])[0]
 
             results = collection.query(query_embeddings=[q_emb], n_results=fetch_pool)
@@ -160,18 +162,18 @@ class PC_Mistral:
                 tokenized_docs = [d.lower().split() for d in docs]
                 bm25 = BM25Okapi(tokenized_docs)
                 
-                # Use the FULL query (including keywords) for the BM25 search
+                # Use the FULL query (including ALL keywords) for the BM25 search
                 tokenized_query = query.lower().split()
                 raw_sparse_scores = bm25.get_scores(tokenized_query)
                 
-                # Min-Max Normalize the BM25 scores to a 0-1 range so they don't break the math
+                # Min-Max Normalize the BM25 scores to a 0-1 range
                 if np.max(raw_sparse_scores) > np.min(raw_sparse_scores):
                     sparse_scores = (raw_sparse_scores - np.min(raw_sparse_scores)) / (np.max(raw_sparse_scores) - np.min(raw_sparse_scores))
                 else:
                     sparse_scores = np.zeros_like(raw_sparse_scores)
 
-                # Combine with weights (70% semantic meaning, 30% exact keyword match)
-                final_scores = (0.7 * dense_scores) + (0.3 * sparse_scores)
+                # Combine with EQUAL weights (50% semantic meaning, 50% exact keyword match)
+                final_scores = (0.5 * dense_scores) + (0.5 * sparse_scores)
                 
                 # Zip and sort by the final hybrid score, then cut down to top_n
                 ranked = sorted(zip(docs, metas, final_scores), key=lambda x: x[2], reverse=True)[:top_n]
@@ -188,6 +190,7 @@ class PC_Mistral:
             logging.error(f"Error in hybrid_search: {str(e)}")
             return []
 
+            
     async def hybrid_search_async(self, *args, **kwargs):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: self.hybrid_search(*args, **kwargs))

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import shutil  # Added for automatic DB cleanup
 import torch
 import time
 import logging
@@ -33,6 +34,14 @@ def get_device():
         return "cpu"
 
 async def main():
+    # =========================================================================
+    # FIX: Automatically clear old ChromaDB database to prevent duplicate chunks 
+    # from previous script runs piling up.
+    # =========================================================================
+    if os.path.exists("chroma_db"):
+        print("\n[INIT] Cleaning up old ChromaDB database to prevent duplicate chunks...")
+        shutil.rmtree("chroma_db", ignore_errors=True)
+
     pdf_path = "2024_LSGD_706572_18_NITLIC.pdf"  
     temp_json_path = "temp_doc.json"
     namespace = "test_tender_namespace"
@@ -109,6 +118,16 @@ async def main():
 
     total_time = time.time() - start_time
     print(f"\nEXTRACTION COMPLETE! Found {len(final_rules)} unique rules in {total_time:.2f} seconds.")
+
+    # =========================================================================
+    # ADDED: Print the final extracted rules beautifully in the terminal
+    # =========================================================================
+    print(f"\n{'='*80}")
+    print("FINAL EXTRACTED RULES (JSON):")
+    print(f"{'='*80}")
+    print(json.dumps(final_rules, indent=4, ensure_ascii=False))
+    print(f"{'='*80}\n")
+    # =========================================================================
 
     # --- 8. Save the final JSON Output (Dataset Format) ---
     print("\nStep 8: Formatting and saving to dataset structure...")
