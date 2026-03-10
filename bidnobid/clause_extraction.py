@@ -1,8 +1,8 @@
-
 import os
 import json
 import asyncio
 import logging
+import json_repair
 from typing import List, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -29,6 +29,7 @@ llm = create_azure_chat_openai(
 DENSE_INDEX_NAME = "dense"
 SPARSE_INDEX_NAME = "sparse"
 CATEGORIES = list(PROMPTS.keys())
+MAX_RECURSION_DEPTH = 5
 
 
 class EligibilityRequest(BaseModel):
@@ -78,7 +79,8 @@ def estimate_tokens(clauses: List[Dict]) -> int:
 
 async def smart_deduplicate_pure_token(
     rules: List[Dict],
-    llm_instance
+    llm_instance,
+    _depth: int = 0
 ) -> List[Dict]:
     """
     TRUE token-only deduplication:
@@ -87,8 +89,16 @@ async def smart_deduplicate_pure_token(
     NO fixed batch size. Ever.
     """
 
+    if not rules:
+        return []
+
+    # Safety: stop infinite recursion
+    if _depth >= MAX_RECURSION_DEPTH:
+        logger.warning(f"Max recursion depth {MAX_RECURSION_DEPTH} reached, returning rules as-is")
+        return rules
+
     total_tokens = estimate_tokens(rules)
-    logger.info(f"Deduplication: {len(rules)} rules → ~{total_tokens:,} tokens")
+    logger.info(f"Deduplication depth={_depth}: {len(rules)} rules → ~{total_tokens:,} tokens")
 
     # SINGLE CALL — BEST QUALITY
     if total_tokens <= MAX_TOKENS:
@@ -113,24 +123,34 @@ Each clause must contain:
 INPUT ({len(rules)} rules):
 {json.dumps(rules, indent=2, ensure_ascii=False)}
 
-OUTPUT: Clean JSON array only. Same format.
+OUTPUT: Clean JSON array only. No markdown, no explanation, no truncation.
 """
 
         try:
-            resp = await llm_instance.ainvoke([
-                ("system", "You are Tender analysis expert.Your task is to merge only true duplicates. Never remove unique rules."),
-                ("human", prompt)
-            ])
+            resp = await llm_instance.ainvoke(
+                [
+                    ("system", "You are Tender analysis expert. Your task is to merge only true duplicates. Never remove unique rules. Always output complete, valid JSON. Never truncate output."),
+                    ("human", prompt)
+                ])
             cleaned = clean_json_response(str(resp.content))
-            result = json.loads(cleaned)
+
+            # Try normal parse first
+            try:
+                result = json.loads(cleaned)
+            except json.JSONDecodeError:
+                # Attempt repair before giving up
+                logger.warning(f"JSON parse failed, attempting repair (depth={_depth})")
+                repaired = json_repair.repair_json(cleaned, return_objects=True)
+                result = repaired if isinstance(repaired, List) else rules 
+
             final = result if isinstance(result, list) else rules
-            logger.info(f"Single-call: {len(rules)} → {len(final)} rules")
+            logger.info(f"Single-call depth={_depth}: {len(rules)} → {len(final)} rules")
             return final
         except Exception as e:
             logger.warning(f"Single call failed ({e}) → falling back to split")
 
     # PURE TOKEN-BASED SPLIT (no fixed size)
-    logger.info("Too many tokens → splitting by half for processing")
+    logger.info(f"Too many tokens → splitting by half for processing (depth={_depth})")
     mid = len(rules) // 2
     left = rules[:mid]
     right = rules[mid:]
@@ -138,14 +158,14 @@ OUTPUT: Clean JSON array only. Same format.
     logger.info(f"Splitting into {len(left)} + {len(right)} rules")
 
     # Recursively deduplicate each half
-    left_clean = await smart_deduplicate_pure_token(left, llm_instance)
-    right_clean = await smart_deduplicate_pure_token(right, llm_instance)
+    left_clean = await smart_deduplicate_pure_token(left, llm_instance, _depth + 1)
+    right_clean = await smart_deduplicate_pure_token(right, llm_instance, _depth + 1)
 
     combined = left_clean + right_clean
     logger.info(f"After split+dedupe: {len(combined)} rules → doing final merge")
 
     # Final global merge (now fits in one call)
-    return await smart_deduplicate_pure_token(combined, llm_instance)
+    return await smart_deduplicate_pure_token(combined, llm_instance, _depth + 1)
 
 async def process_category(cat,retriever, pc_mistral, top_n):
     # Step 1: Get category-specific context
@@ -203,7 +223,7 @@ async def extract_clauses(request: EligibilityRequest,
         all_rules = [r for sublist in results for r in sublist]
         print(f"Total time for extraction before deduplication: {asyncio.get_event_loop().time() - start:.2f}s")
         # HYBRID DEDUPLICATION
-        final_rules = await smart_deduplicate_pure_token(all_rules,llm)
+        final_rules = await smart_deduplicate_pure_token(all_rules, llm)
 
         total_time = asyncio.get_event_loop().time() - start
         logger.info(f"TOTAL TIME: {total_time:.2f}s | Rules: {len(all_rules)} → {len(final_rules)}")

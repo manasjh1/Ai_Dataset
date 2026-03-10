@@ -42,7 +42,7 @@ async def main():
         print("\n[INIT] Cleaning up old ChromaDB database to prevent duplicate chunks...")
         shutil.rmtree("chroma_db", ignore_errors=True)
 
-    pdf_path = "2024_LSGD_706572_18_NITLIC.pdf"  
+    pdf_path = "2024_KRIDE_216260_1_Tendernotice_1.pdf"  
     temp_json_path = "temp_doc.json"
     namespace = "test_tender_namespace"
     device = get_device()
