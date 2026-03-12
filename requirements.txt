@@ -18,3 +18,4 @@ numpy<2
 transformers==4.45.2
 pypdf
 json-repair
+boto3   
