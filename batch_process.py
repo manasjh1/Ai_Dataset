@@ -5,7 +5,6 @@ import torch
 import glob
 import re
 from dotenv import load_dotenv
-from pypdf import PdfReader, PdfWriter
 
 # Load environment variables for Azure OpenAI keys
 load_dotenv()
@@ -15,12 +14,19 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from utils.parse_to_mistral import _run_marker_sync
 from bidnobid.clause_extraction import process_category, smart_deduplicate_pure_token, CATEGORIES, llm
 
+
+# ── CONFIG ────────────────────────────────────────────────────────────────────
+PDF_FOLDER  = "./downloaded_pdfs"     # Folder containing all PDFs to process
+MASTER_FILE = "master_dataset.json"  # Output file — auto-resumes from here
+TOTAL_FILES = None                   
+
 def get_cuda_device():
     """Strictly enforces CUDA usage."""
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is not available! This script is configured to run ONLY on an NVIDIA GPU.")
     print("GPU Detected: Using strictly NVIDIA CUDA")
     return "cuda"
+
 
 def _sanitize_collection_name(name: str) -> str:
     """Cleans up the filename to be used as a valid ChromaDB namespace."""
@@ -41,11 +47,12 @@ def append_to_json_file(filepath, new_data):
             data = []
     else:
         data = []
-    
+
     data.append(new_data)
-    
+
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
 
 def is_already_processed(master_file, filename):
     """Check if this PDF was already processed and saved in master file."""
@@ -58,61 +65,34 @@ def is_already_processed(master_file, filename):
     except Exception:
         return False
 
-def split_pdf_in_half(pdf_path, part1_path, part2_path):
-    """Splits a PDF into two equal halves and saves them."""
-    reader = PdfReader(pdf_path)
-    total_pages = len(reader.pages)
-    
-    if total_pages < 2:
-        raise ValueError("PDF only has 1 page and cannot be split.")
-        
-    mid = total_pages // 2
-    
-    writer1 = PdfWriter()
-    for i in range(mid):
-        writer1.add_page(reader.pages[i])
-    with open(part1_path, "wb") as f1:
-        writer1.write(f1)
-        
-    writer2 = PdfWriter()
-    for i in range(mid, total_pages):
-        writer2.add_page(reader.pages[i])
-    with open(part2_path, "wb") as f2:
-        writer2.write(f2)
 
-def extract_text_with_fallback(pdf_path, filename):
-    """Attempts to extract text. If GPU OOM occurs, splits file in half and retries."""
+def get_last_processed_file_number(master_file):
+    """
+    Reads master_dataset.json and returns the next file number to process.
+    Returns None if the file doesn't exist or is empty (fresh start).
+    """
+    if not os.path.exists(master_file):
+        return None
+    try:
+        with open(master_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not data:
+            return None
+        last_file_number = max(entry.get("file_number", 0) for entry in data)
+        print(f"[Auto-Resume] Last completed file: #{last_file_number}. Resuming from #{last_file_number + 1}.")
+        return last_file_number + 1
+    except Exception as e:
+        print(f"[Auto-Resume] Could not read master file ({e}). Starting from file #1.")
+        return None
+
+
+def extract_text(pdf_path, filename):
+    """Extracts text from PDF using Marker."""
     try:
         return _run_marker_sync(pdf_path)
-        
     except Exception as e:
-        error_msg = str(e).lower()
-        if "memory" in error_msg or "cuda" in error_msg or "allocate" in error_msg:
-            print(f"GPU Out of Memory detected for {filename}! Splitting file into halves...")
-            torch.cuda.empty_cache()
-            
-            part1_path = f"temp_part1_{filename}"
-            part2_path = f"temp_part2_{filename}"
-            
-            try:
-                split_pdf_in_half(pdf_path, part1_path, part2_path)
-                
-                print(f"   ➔ Extracting Part 1...")
-                text1 = _run_marker_sync(part1_path)
-                torch.cuda.empty_cache()
-                
-                print(f"   ➔ Extracting Part 2...")
-                text2 = _run_marker_sync(part2_path)
-                torch.cuda.empty_cache()
-                
-                print(f"Successfully extracted and merged both halves!")
-                return text1 + "\n\n" + text2
-                
-            finally:
-                if os.path.exists(part1_path): os.remove(part1_path)
-                if os.path.exists(part2_path): os.remove(part2_path)
-        else:
-            raise e
+        print(f"Error extracting text from {filename}: {e}")
+        raise e
 
 async def process_single_pdf(pdf_path, db, master_file, file_number, total_files):
     filename = os.path.basename(pdf_path)
@@ -129,11 +109,11 @@ async def process_single_pdf(pdf_path, db, master_file, file_number, total_files
     # 1. Extract Text
     print("Step 1: Extracting text using Marker...")
     try:
-        markdown_text = extract_text_with_fallback(pdf_path, filename)
+        markdown_text = extract_text(pdf_path, filename)
     except Exception as e:
         print(f"Error extracting text from {filename}: {e}")
         return False
-        
+
     if not markdown_text:
         print(f"Marker returned empty text for {filename}. Skipping.")
         return False
@@ -145,14 +125,15 @@ async def process_single_pdf(pdf_path, db, master_file, file_number, total_files
     print(f"Step 2: Uploading to ChromaDB (Namespace: {namespace})...")
     try:
         await db.chunk_upload_hybrid(
-            filenames=[temp_json_path], 
-            dense_index=None, 
-            sparse_index=None, 
+            filenames=[temp_json_path],
+            dense_index=None,
+            sparse_index=None,
             namespace=namespace
         )
     except Exception as e:
         print(f"Error uploading to ChromaDB: {e}")
-        if os.path.exists(temp_json_path): os.remove(temp_json_path)
+        if os.path.exists(temp_json_path):
+            os.remove(temp_json_path)
         return False
 
     if os.path.exists(temp_json_path):
@@ -161,11 +142,11 @@ async def process_single_pdf(pdf_path, db, master_file, file_number, total_files
     # 3. GPT Extraction
     print("Step 3: Running GPT Extraction...")
     retriever = db.get_hybrid_retriever(namespace=namespace, k=20)
-    
+
     tasks = [process_category(cat, retriever, db, 20) for cat in CATEGORIES]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    all_rules = []
+
+    all_rules = []  # ✅ FIXED: Proper indentation
     for res in results:
         if isinstance(res, list):
             all_rules.extend(res)
@@ -179,7 +160,7 @@ async def process_single_pdf(pdf_path, db, master_file, file_number, total_files
             final_rules = await smart_deduplicate_pure_token(all_rules, llm)
         except Exception as e:
             print(f"Deduplication error: {e}. Falling back to raw rules.")
-            final_rules = all_rules 
+            final_rules = all_rules
     else:
         final_rules = []
 
@@ -207,32 +188,41 @@ async def process_single_pdf(pdf_path, db, master_file, file_number, total_files
     print(f"Successfully finished {filename}")
     return True
 
+
 async def main():
-    master_file = "master_dataset.json"
-
-    # ── START CONFIG ──────────────────────────────────────────────
-    START_FROM = 264   # Change this number to resume from any file
-    TOTAL_FILES = 500  # Total files in the full dataset
-    # ─────────────────────────────────────────────────────────────
-
     device = get_cuda_device()
 
-    # sorted() ensures consistent file numbering across runs
-    all_pdf_files = sorted(glob.glob("/teamspace/studios/this_studio/Ai_Dataset/500 Files/*.pdf"))
+    # ── Discover all PDFs in the folder ──────────────────────────────────────
+    all_pdf_files = sorted(glob.glob(os.path.join(PDF_FOLDER, "*.pdf")))
+
     if not all_pdf_files:
-        print("No PDF files found in the current folder. Please put your PDFs here and run again.")
+        print(f"No PDF files found in '{PDF_FOLDER}'. Please add PDFs and run again.")
         return
 
-    # Slice to start from file number START_FROM (e.g. 265 → index 264)
-    pdf_files = all_pdf_files[START_FROM - 1:]
+    total_files = TOTAL_FILES if TOTAL_FILES is not None else len(all_pdf_files)
+    all_pdf_files = all_pdf_files[:total_files]  # cap if TOTAL_FILES is set
 
-    print(f"Total PDFs in folder : {len(all_pdf_files)}")
-    print(f"Starting from file   : #{START_FROM}")
-    print(f"Files to process now : {len(pdf_files)}  (#{START_FROM} → #{TOTAL_FILES})")
+    print(f"PDF folder       : {PDF_FOLDER}")
+    print(f"Total PDFs found : {len(all_pdf_files)}")
+
+    # ── Auto-detect resume point ──────────────────────────────────────────────
+    auto_start  = get_last_processed_file_number(MASTER_FILE)
+    start_index = (auto_start - 1) if auto_start is not None else 0  # convert to 0-based index
+
+    if start_index >= len(all_pdf_files):
+        print("All files have already been processed. Nothing to do.")
+        return
+
+    pdf_files_to_process = all_pdf_files[start_index:]
+    start_from_number    = start_index + 1  # human-readable 1-based file number
+
+    print(f"Resuming from    : #{start_from_number}")
+    print(f"Files remaining  : {len(pdf_files_to_process)}")
     print("Initializing models into VRAM (this happens only once)...")
 
+    # ── Load models once ──────────────────────────────────────────────────────
     embed_model = HuggingFaceEmbeddings(
-        model_name="intfloat/e5-large-v2", 
+        model_name="intfloat/e5-large-v2",
         model_kwargs={'device': device, 'trust_remote_code': True},
         encode_kwargs={'normalize_embeddings': True}
     )
@@ -240,16 +230,15 @@ async def main():
 
     successful, failed = 0, 0
 
-    # enumerate starts at START_FROM so idx = 265, 266, 267 … 500
-    for idx, pdf_path in enumerate(pdf_files, START_FROM):
-        print(f"\n==================================================")
-        print(f"Processing File {idx} of {TOTAL_FILES}")
-        print(f"==================================================")
+    for idx, pdf_path in enumerate(pdf_files_to_process, start=start_from_number):  # ✅ FIXED: Proper indentation
+        print(f"\n{'='*50}")
+        print(f"Processing File {idx} of {total_files}")
+        print(f"{'='*50}")
         try:
             success = await process_single_pdf(
-                pdf_path, db, master_file,
+                pdf_path, db, MASTER_FILE,
                 file_number=idx,
-                total_files=TOTAL_FILES
+                total_files=total_files
             )
             if success:
                 successful += 1
@@ -258,14 +247,15 @@ async def main():
         except Exception as e:
             print(f"Fatal error processing {pdf_path}: {e}")
             failed += 1
-            
+
         torch.cuda.empty_cache()
 
     print("\nBATCH PROCESSING COMPLETE!")
-    print(f"Range processed : #{START_FROM} → #{TOTAL_FILES}")
-    print(f"Successful      : {successful}")
-    print(f"Failed          : {failed}")
-    print(f"All data compiled in '{master_file}'")
+    print(f"Range processed  : #{start_from_number} → #{total_files}")
+    print(f"Successful       : {successful}")
+    print(f"Failed           : {failed}")
+    print(f"Output saved to  : '{MASTER_FILE}'")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
